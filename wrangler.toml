@@ -1,0 +1,28 @@
+name = "hono-cf-proxy"
+compatibility_date = "2023-12-01"
+main = "src/index.ts"
+route = "hono-cf-proxy.linnil1.me/*"
+
+[durable_objects]
+bindings = [
+    {name = "RATE", class_name = "RateLimiter"},
+    {name = "QUOTA", class_name = "QuotaLimiter"},
+]
+
+[[migrations]]
+tag = "v1" # Should be unique for each entry
+new_classes = ["RateLimiter", "QuotaLimiter"]
+
+[[kv_namespaces]]
+binding = "DATA"
+id = "da6729bfbc4245f1be22b17660b89c3d"
+
+[[ d1_databases ]]
+binding = "DB"
+database_name = "DB"
+database_id = "86b6465d-05ba-4235-89d3-ce8230a613ad"
+
+# Init the production env
+# npx wrangler kv:namespace create DATA 
+# npx wrangler d1 create DB
+# npx wrangler d1 execute DB --file init.sql 

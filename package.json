@@ -1,0 +1,14 @@
+{
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --minify src/index.ts"
+  },
+  "dependencies": {
+    "@hono/oauth-providers": "^0.3.0",
+    "hono": "^3.12.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20231218.0",
+    "wrangler": "^3.22.4"
+  }
+}
