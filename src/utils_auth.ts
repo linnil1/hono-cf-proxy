@@ -1,16 +1,20 @@
 import { HTTPException } from "hono/http-exception"
 import type { Context, Handler, MiddlewareHandler } from "hono"
 
-export async function generate_token_id(c: Context) {
-    while (true) {
+// Find non-used token
+export async function generateTokenId(c: Context) {
+    for (let i = 0; i < 3; i++) {
         const token_id = crypto.randomUUID()
         const token_test = await c.env.DATA.get(`token-${token_id}`)
         if (!token_test) return token_id
     }
+    throw new HTTPException(500, {
+        message: "Internal Server Error",
+    })
 }
 
-// Use a token to get token object
-export function validate_token_by_simple_kv(): MiddlewareHandler {
+// Use a token to get user object
+export function validateTokenBySingleKey(): MiddlewareHandler {
     return async (c, next) => {
         const headerToken = c.req.header("Authorization")
         if (!headerToken || !headerToken.startsWith("Bearer "))
@@ -34,7 +38,7 @@ export function validate_token_by_simple_kv(): MiddlewareHandler {
 }
 
 // Use a token to get token object
-export function validate_token_by_kv(): MiddlewareHandler {
+export function validateTokenByKv(): MiddlewareHandler {
     return async (c, next) => {
         const headerToken = c.req.header("Authorization")
         if (!headerToken || !headerToken.startsWith("Bearer "))
@@ -64,7 +68,7 @@ export function validate_token_by_kv(): MiddlewareHandler {
     }
 }
 
-export function validate_token_by_sql(): MiddlewareHandler {
+export function validateTokenBySql(): MiddlewareHandler {
     return async (c, next) => {
         // npx wrangler d1 execute example --file init.sql        --local
         const headerToken = c.req.header("Authorization")
@@ -73,16 +77,17 @@ export function validate_token_by_sql(): MiddlewareHandler {
                 message: "Require 'Authorization: Bearer' in Header",
             })
         const token = headerToken.substring(7)
+        console.log(new Date().toISOString())
         const stat = c.env.DB.prepare(
             `
-SELECT *, GROUP_CONCAT(groups.group_name) AS groups
+SELECT *, GROUP_CONCAT(groups.groupname) AS groups
 FROM tokens 
-JOIN users ON users.user_id = tokens.user_id AND token_value = ?
+JOIN users ON users.user_id = tokens.user_id AND token_id = ? AND tokens.expires_at > ?
 JOIN user_groups ON user_groups.user_id = users.user_id
 JOIN groups ON user_groups.group_id = groups.group_id
 GROUP BY users.user_id;
 `,
-        ).bind(token)
+        ).bind(token, new Date().toISOString())
         const user = await stat.first()
         if (!user)
             throw new HTTPException(401, {
@@ -97,14 +102,14 @@ GROUP BY users.user_id;
     }
 }
 
-export function jwt_to_user(): MiddlewareHandler {
+export function extractUserFromJWT(): MiddlewareHandler {
     return async (c, next) => {
         c.set("user", c.get("jwtPayload"))
         await next()
     }
 }
 
-export function show_user(): Handler {
+export function returnUserInfo(): Handler {
     return async (c) => {
         return c.json({ user: c.get("user") })
     }

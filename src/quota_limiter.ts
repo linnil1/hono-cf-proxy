@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 
-function trunc_number(num: number, k: number): number {
+function truncKDigit(num: number, k: number): number {
     return Math.floor(num / k) * k
 }
 
@@ -16,7 +16,7 @@ function intervalToSeconds(interval: string): number {
     return intervalMap[interval] || 0
 }
 
-function datetime_trunc(interval: string, k: number = 1): Date {
+function truncDatetime(interval: string, k: number = 1): Date {
     const seconds = intervalToSeconds(interval)
     let date = new Date()
     date.setUTCMilliseconds(0)
@@ -26,16 +26,15 @@ function datetime_trunc(interval: string, k: number = 1): Date {
     if (seconds > intervalToSeconds("day")) date.setUTCDate(1)
     if (seconds > intervalToSeconds("month")) date.setUTCMonth(0)
     if (interval == "second")
-        date.setUTCSeconds(trunc_number(date.getUTCSeconds(), k))
+        date.setUTCSeconds(truncKDigit(date.getUTCSeconds(), k))
     if (interval == "minute")
-        date.setUTCMinutes(trunc_number(date.getUTCMinutes(), k))
-    if (interval == "hour")
-        date.setUTCHours(trunc_number(date.getUTCHours(), k))
-    if (interval == "day") date.setUTCDate(trunc_number(date.getUTCDate(), k))
+        date.setUTCMinutes(truncKDigit(date.getUTCMinutes(), k))
+    if (interval == "hour") date.setUTCHours(truncKDigit(date.getUTCHours(), k))
+    if (interval == "day") date.setUTCDate(truncKDigit(date.getUTCDate(), k))
     if (interval == "month")
-        date.setUTCMonth(trunc_number(date.getUTCMonth(), k))
+        date.setUTCMonth(truncKDigit(date.getUTCMonth(), k))
     if (interval == "year")
-        date.setUTCFullYear(trunc_number(date.getUTCFullYear(), k))
+        date.setUTCFullYear(truncKDigit(date.getUTCFullYear(), k))
     return date
 }
 
@@ -60,7 +59,7 @@ export class QuotaLimiter {
             const seconds = intervalToSeconds(interval_unit) * k
             if (seconds == 0) return c.json({ status: "invalid interval" }, 400)
             const ttl_seconds = seconds > 60 ? seconds : 60
-            const datetime = datetime_trunc(interval_unit, k)
+            const datetime = truncDatetime(interval_unit, k)
             const limit = parseInt(c.req.query("limit") || "1")
             let key = datetime.toISOString()
 
