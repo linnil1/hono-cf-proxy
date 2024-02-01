@@ -208,7 +208,7 @@ app.all("/app9/*", returnUserInfo())
 
 // Add rate limit
 import { setRateLimit, setRateLimitByUser } from "./utils_limiter"
-app.use("/app10/*", setRateLimit(15000, "app10_15s_setRateLimit"))
+app.use("/app10/*", setRateLimit("app10_15s_setRateLimit", { rate: 15000 }))
 app.all("/app10/*", basicProxy(target_url))
 
 // Rate limit per user
@@ -216,16 +216,33 @@ app.get("/app10-1/init", async (c) => {
     c.redirect("/app7/init?group=linnil1")
 })
 app.use("/app10-1/*", validateTokenByKv())
-app.use("/app10-1/*", setRateLimitByUser(15000, "app10_1_rate_15s_peruser"))
+app.use(
+    "/app10-1/*",
+    setRateLimitByUser("app10_1_rate_15s_peruser", { rate: 15000 }),
+)
 app.all("/app10-1/*", basicProxy(target_url))
 
 // Add Quota limit
 // Quota limit per user is the same as rate limiter
 // Quota limit by ip can also be implement for rate limiter
 import { setQuotaLimit, setQuotaLimitByIp } from "./utils_limiter"
-app.use("/app11/*", setQuotaLimit("app11_quota", 1, 2, "minute")) // 1 requests per 2 minutes
+app.use(
+    "/app11/*",
+    setQuotaLimit("app11_quota", {
+        limit: 1,
+        interval: 2,
+        interval_unit: "minute",
+    }),
+) // 1 requests per 2 minutes
 app.all("/app11/*", basicProxy(target_url))
-app.use("/app11-1/*", setQuotaLimitByIp("app11_quota", 2, 1, "minute")) // 2 requests per minute
+app.use(
+    "/app11-1/*",
+    setQuotaLimitByIp("app11_quota", {
+        limit: 2,
+        interval: 1,
+        interval_unit: "minute",
+    }),
+) // 2 requests per minute
 app.all("/app11-1/*", basicProxy(target_url))
 
 // Cache
