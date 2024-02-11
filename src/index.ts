@@ -20,7 +20,7 @@ type Variables = {
     headers: Record<string, string>
     queries: Record<string, string>
     body?: string
-    resp?: string
+    resp_body?: string
     status?: number
 }
 
@@ -31,9 +31,11 @@ const app = new Hono<{
 
 // for debug: run `python backend-api.py` as target
 // const target_url = "http://localhost:5000"
-const target_url = "https://httpbin.org/anything"
+// const target_url = "https://httpbin.org/anything"
+const target_url = "https://httpbin.org"
 
 // Proxy to target
+// also `curl localhost:8787/app1/image/png` can work, too.
 app.all("/app1/*", basicProxy(target_url))
 
 // Modify the response data(header, status code, data)
@@ -76,10 +78,14 @@ app.use("/app3-1/*", async (c, next) => {
     let querys = c.get("queries")
     querys["query"] = "add_query_value"
     c.set("queries", querys)
+    c.req.path = c.req.path.replace("/app3-1", "")
     await next()
-    let body = JSON.parse(c.get("resp") || "{}")
+    const data = await (new Response(c.get("resp_body"))).text()
+    let body = JSON.parse(data || "{}")
+    console.log(body)
     body["add_resp"] = true
-    c.set("resp", JSON.stringify(body, null, " "))
+    c.set("status", 201)
+    c.set("resp_body", JSON.stringify(body, null, " "))
 })
 app.all("/app3-1/*", variableProxy(target_url))
 

@@ -1,7 +1,9 @@
 import { HTTPException } from "hono/http-exception"
 import type { Context, Handler, MiddlewareHandler } from "hono"
 
-// Find non-used token
+/**
+ * Find non-used token from KV
+ */
 export async function generateTokenId(c: Context) {
     for (let i = 0; i < 3; i++) {
         const token_id = crypto.randomUUID()
@@ -13,7 +15,11 @@ export async function generateTokenId(c: Context) {
     })
 }
 
-// Use a token to get user object
+/**
+ * Get user object directly in KV with Token as key
+ *
+ * @returns {MiddlewareHandler} The Hono middleware.
+ */
 export function validateTokenBySingleKey(): MiddlewareHandler {
     return async (c, next) => {
         const headerToken = c.req.header("Authorization")
@@ -37,7 +43,12 @@ export function validateTokenBySingleKey(): MiddlewareHandler {
     }
 }
 
-// Use a token to get token object
+/**
+ * Validate the token is in the KV and get the user_id.
+ * And get the user object directly in KV
+ *
+ * @returns {MiddlewareHandler} The Hono middleware.
+ */
 export function validateTokenByKv(): MiddlewareHandler {
     return async (c, next) => {
         const headerToken = c.req.header("Authorization")
@@ -68,6 +79,11 @@ export function validateTokenByKv(): MiddlewareHandler {
     }
 }
 
+/**
+ * Validate the token and get user object by SQL.
+ *
+ * @returns {MiddlewareHandler} The Hono middleware.
+ */
 export function validateTokenBySql(): MiddlewareHandler {
     return async (c, next) => {
         // npx wrangler d1 execute example --file init.sql        --local
@@ -102,6 +118,11 @@ GROUP BY users.user_id;
     }
 }
 
+/**
+ * Rename jwtPayload to user object
+ *
+ * @returns {MiddlewareHandler} The Hono middleware.
+ */
 export function extractUserFromJWT(): MiddlewareHandler {
     return async (c, next) => {
         c.set("user", c.get("jwtPayload"))
@@ -109,12 +130,23 @@ export function extractUserFromJWT(): MiddlewareHandler {
     }
 }
 
+/**
+ * Response user object in JSON
+ *
+ * @returns {Handler} The Hono endpoint Handler.
+ */
 export function returnUserInfo(): Handler {
     return async (c) => {
         return c.json({ user: c.get("user") })
     }
 }
 
+/**
+ * Check if the user is in the group
+ *
+ * @param {string} group_name The group that allow to access
+ * @returns {Handler} The Hono endpoint Handler.
+ */
 export function group_permission(group_name: string): MiddlewareHandler {
     return async (c, next) => {
         const data = c.get("user")

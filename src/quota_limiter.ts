@@ -1,9 +1,28 @@
 import { Hono } from "hono"
 
+/**
+ * Truncate a given number to the nearest multiple of another number.
+ *
+ * This function truncates the provided number to the nearest multiple
+ * of the specified digit (k).
+ *
+ * @param {number} num The number to truncate.
+ * @param {number} k The digit to truncate to.
+ * @returns {number} The truncated number.
+ */
 function truncKDigit(num: number, k: number): number {
     return Math.floor(num / k) * k
 }
 
+/**
+ * Convert a time interval string to its equivalent number of seconds.
+ *
+ * This function maps common time interval units (e.g., 'second', 'minute', 'hour', etc.)
+ * to their respective number of seconds.
+ *
+ * @param {string} interval The time interval unit (e.g., 'second', 'minute', 'hour', etc.).
+ * @returns {number} The number of seconds in the given interval.
+ */
 function intervalToSeconds(interval: string): number {
     const intervalMap: Record<string, number> = {
         second: 1,
@@ -16,6 +35,13 @@ function intervalToSeconds(interval: string): number {
     return intervalMap[interval] || 0
 }
 
+/**
+ * Truncate a given date/time to a specified interval.
+ *
+ * @param {string} interval The interval string (e.g., 'second', 'minute', 'hour', etc.).
+ * @param {number} [k=1] The interval range: k (units).
+ * @returns {Date} The truncated date/time object.
+ */
 function truncDatetime(interval: string, k: number = 1): Date {
     const seconds = intervalToSeconds(interval)
     let date = new Date()
@@ -38,6 +64,20 @@ function truncDatetime(interval: string, k: number = 1): Date {
     return date
 }
 
+/**
+ * A Durable Object class to enforce quota limits.
+ *
+ * This class implements quota limits based on a specified time interval,
+ * allowing a certain number of requests per unit time.
+ *
+ * @property {string} key The key identifying the current time interval.
+ * @property {number} counter The current count of requests within the time interval.
+ * @property {DurableObjectState} state The Durable Object state for the rate limiter.
+ * @property {Hono} app The Hono instance for handling requests.
+ *
+ * @class QuotaLimiter
+ */
+
 export class QuotaLimiter {
     // set [number] of quota per [k] [second|minute|...]
     key: string = ""
@@ -53,7 +93,9 @@ export class QuotaLimiter {
                 (await this.state.storage?.get<number>("counter")) || 0
         })
 
+        // Handle quota limit query
         this.app.get("/query", async (c) => {
+            // find the current time interval (as a key)
             const k = parseInt(c.req.query("interval") || "1")
             const interval_unit = c.req.query("interval_unit") || "second"
             const seconds = intervalToSeconds(interval_unit) * k
@@ -63,6 +105,7 @@ export class QuotaLimiter {
             const limit = parseInt(c.req.query("limit") || "1")
             let key = datetime.toISOString()
 
+            // Update key and counter based on current time interval
             if (key != this.key) {
                 this.key = key
                 await this.state.storage?.put("key", this.key, {

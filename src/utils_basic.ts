@@ -1,6 +1,11 @@
 import type { Handler, MiddlewareHandler } from "hono"
 
-// Proxy the request to specific URL
+/**
+ * Proxy the request to a specific URL.
+ *
+ * @param {string} [proxy_url=""] - The URL to proxy the request to.
+ * @returns {Handler} The handler function for Hono.
+ */
 export function basicProxy(proxy_url: string = ""): Handler {
     return async (c) => {
         // remove prefix
@@ -14,7 +19,6 @@ export function basicProxy(proxy_url: string = ""): Handler {
                 "",
             )
         let path = proxy_url ? proxy_url + suffix_path : c.req.url
-        console.log(path)
         // add params to URL
         if (c.req.query())
             path = path + "?" + new URLSearchParams(c.req.query())
@@ -27,15 +31,19 @@ export function basicProxy(proxy_url: string = ""): Handler {
         // return rep
         // or Use Hono provided Response class
         return c.newResponse(
-            await rep.text(),
+            rep.body,
             rep.status,
             Object.fromEntries(rep.headers),
         )
     }
 }
 
-// Save information from the incoming request in variables
-// Allow for further middleware processing
+/**
+ * Save information from the incoming request in variables
+ * to allow for further middleware processing.
+ *
+ * @returns {MiddlewareHandler} Hono middleware handler.
+ */
 export function extractReqVar(): MiddlewareHandler {
     return async (c, next) => {
         c.set("method", c.req.method)
@@ -44,32 +52,36 @@ export function extractReqVar(): MiddlewareHandler {
         // text() will be null if method=GET
         c.set("body", await c.req.raw.text())
         await next()
-        c.res = new Response(c.get("resp"), {
-            status: c.get("status"),
-            headers: c.res.headers,
-        })
     }
 }
 
-// Save information from the incoming request in variables
-// Allow for further middleware processing
-// After that, construct the response from variable
+/**
+ * Save information from the incoming request in Hono variables
+ * to allow for further middleware processing.
+ * After processing, construct the response from Hono variables.
+ *
+ * @returns {MiddlewareHandler} Hono middleware handler.
+ */
 export function handleReqResVar(): MiddlewareHandler {
     return async (c, next) => {
         c.set("method", c.req.method)
         c.set("headers", Object.fromEntries(c.req.raw.headers))
         c.set("queries", c.req.query())
-        // text() will be null if method=GET
         c.set("body", await c.req.raw.text())
         await next()
-        c.res = new Response(c.get("resp"), {
+        c.res = new Response(c.get("resp_body"), {
             status: c.get("status"),
             headers: c.res.headers,
         })
     }
 }
 
-// Use Hono variables for request options
+/**
+ * Use Hono variables for request options
+ *
+ * @param {string} [proxy_url=""] - The URL to proxy the request to.
+ * @returns {Handler} The handler function for Hono.
+ */
 export function proxyReqVar(proxy_url: string = ""): Handler {
     return async (c) => {
         let path = proxy_url + c.req.path
@@ -84,23 +96,30 @@ export function proxyReqVar(proxy_url: string = ""): Handler {
     }
 }
 
-// Use Hono variables for request and response
+/**
+ * Use Hono variables for request and response
+ *
+ * @param {string} [proxy_url=""] - The URL to proxy the request to.
+ * @returns {Handler} The handler function for Hono.
+ */
 export function variableProxy(proxy_url: string = ""): Handler {
     return async (c) => {
         let path = proxy_url + c.req.path
         if (c.get("queries"))
             path = path + "?" + new URLSearchParams(c.get("queries"))
+        console.log(path)
         const rep = await fetch(path, {
             method: c.get("method"),
             headers: c.get("headers"),
             body: c.get("method") == "GET" ? null : c.get("body"),
         })
-        c.set("resp", await rep.text())
+        console.log(rep)
+        c.set("resp_body", rep.body)
         c.set("status", rep.status)
         return c.newResponse(
-            c.get("resp"),
+            c.get("resp_body"),
             rep.status,
-            Object.fromEntries(c.res.headers),
+            Object.fromEntries(rep.headers),
         )
     }
 }
