@@ -23,11 +23,13 @@ export function basicProxy(proxy_url: string = ""): Handler {
         if (c.req.query())
             path = path + "?" + new URLSearchParams(c.req.query())
         // request
+        console.log(path)
         const rep = await fetch(path, {
             method: c.req.method,
             headers: c.req.raw.headers,
             body: c.req.raw.body,
         })
+        if (rep.status == 101) return rep
         // return rep
         // or Use Hono provided Response class
         return c.newResponse(
@@ -68,6 +70,7 @@ export function handleReqResVar(): MiddlewareHandler {
         c.set("headers", Object.fromEntries(c.req.raw.headers))
         c.set("queries", c.req.query())
         c.set("body", await c.req.raw.text())
+        // c.set("body", await c.req.json())  // if all your request is in json format
         await next()
         c.res = new Response(c.get("resp_body"), {
             status: c.get("status"),
@@ -113,8 +116,8 @@ export function variableProxy(proxy_url: string = ""): Handler {
             headers: c.get("headers"),
             body: c.get("method") == "GET" ? null : c.get("body"),
         })
-        console.log(rep)
         c.set("resp_body", rep.body)
+        // c.set("resp_body", await rep.json())  // if all your response is in json format
         c.set("status", rep.status)
         return c.newResponse(
             c.get("resp_body"),
@@ -122,4 +125,43 @@ export function variableProxy(proxy_url: string = ""): Handler {
             Object.fromEntries(rep.headers),
         )
     }
+}
+
+/**
+ * Create a websocket in Cloudflare worker
+ *
+ * @returns {MiddlewareHandler} The Hono handler function
+ */
+export function useWebsocket(): MiddlewareHandler {
+    return async (c, next) => {
+        const upgradeHeader = c.req.header("Upgrade")
+        if (!upgradeHeader || upgradeHeader !== "websocket") {
+            return new Response("Expected Upgrade: websocket", { status: 426 })
+        }
+        const webSocketPair = new WebSocketPair()
+        const [client, server] = Object.values(webSocketPair)
+        c.set("ws_client", client)
+        c.set("ws_server", server)
+        server.accept()
+        await next()
+        c.res = new Response(null, {
+            status: 101,
+            webSocket: client,
+        })
+    }
+}
+
+/**
+ * Create a websocket to remote server
+ *
+ * @param {string} [target_websocket_url] - The URL of remote websocket
+ * @returns {Websocket} The Websocket Object
+ */
+export async function getWebsocketTarget(target_websocket_url: string) {
+    const resp = await fetch(target_websocket_url, {
+        headers: { Upgrade: "websocket" },
+    })
+    const ws = resp.webSocket
+    ws.accept()
+    return ws
 }

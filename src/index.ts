@@ -22,6 +22,8 @@ type Variables = {
     body?: string
     resp_body?: string
     status?: number
+    ws_server?: WebSocket
+    ws_client?: WebSocket
 }
 
 const app = new Hono<{
@@ -30,9 +32,15 @@ const app = new Hono<{
 }>()
 
 // for debug: run `python backend-api.py` as target
+const target_url = "https://websocketstest.com/service"
 // const target_url = "http://localhost:5000"
+const target_ws_url = "https://echo.websocket.org"
+// const target_ws_url = target_url + "/websocket"
+const target_sio_url = "https://socketio-chat-h9jt.herokuapp.com"
+// const target_sio_url = target_url + "/socketio"
+// const target_grpc_url = "http://localhost:5001"
 // const target_url = "https://httpbin.org/anything"
-const target_url = "https://httpbin.org"
+// const target_url = "https://httpbin.org"
 
 // Proxy to target
 // also `curl localhost:8787/app1/image/png` can work, too.
@@ -80,7 +88,9 @@ app.use("/app3-1/*", async (c, next) => {
     c.set("queries", querys)
     c.req.path = c.req.path.replace("/app3-1", "")
     await next()
-    const data = await (new Response(c.get("resp_body"))).text()
+    // If you save resp_body in json
+    // It will be more eaiser
+    const data = await new Response(c.get("resp_body")).text()
     let body = JSON.parse(data || "{}")
     console.log(body)
     body["add_resp"] = true
@@ -261,6 +271,71 @@ app.use(
     }),
 )
 app.all("/app12/*", basicProxy(target_url))
+
+// image: the same
+app.use("/app13/*", async (c, next) => {
+    c.req.path = "/image/png"
+    await next()
+})
+app.get("/app13/*", basicProxy(target_url))
+
+// fetch another website
+app.use("/app14/*", handleReqResVar())
+app.use("/app14/*", async (c, next) => {
+    await next()
+    const rep = await fetch(target_url + "/get?another_query=true")
+    const data: Record<string, any> = await new Response(
+        c.get("resp_body"),
+    ).json()
+    data["another_fetch"] = await rep.json()
+    c.set("resp_body", JSON.stringify(data))
+})
+app.all("/app14/*", variableProxy(target_url))
+
+import { useWebsocket, getWebsocketTarget } from "./utils_basic"
+// Proxy by fetch
+app.all("/app15-0/*", basicProxy(target_ws_url))
+app.all("/app15-1/*", basicProxy(target_sio_url))
+
+// Handle websocket in Cloudflare worker
+app.use("/app16/*", useWebsocket())
+app.all("/app16/*", async (c) => {
+    const server = c.get("ws_server")
+    if (server == undefined) {
+        throw new Error("websocket is undefined")
+    }
+    server.addEventListener("message", (event) => {
+        const data = {
+            ...JSON.parse(event.data),
+            server: "proxy-server",
+        }
+        server.send(JSON.stringify(data))
+    })
+})
+
+// Cloudflare worker as proxy websocket
+app.use("/app17/*", useWebsocket())
+app.all("/app17/*", async (c) => {
+    const target = await getWebsocketTarget(target_ws_url)
+    const server = c.get("ws_server")
+    if (server == undefined) {
+        throw new Error("websocket is undefined")
+    }
+    // ugly, maybe it can still use middleware pattern
+    server.addEventListener("close", (_) => target.close())
+    server.addEventListener("message", (event) => {
+        target.send(event.data)
+    })
+    target.addEventListener("close", (_) => server.close())
+    target.addEventListener("message", (event) => {
+        let data = { message: event.data }
+        try {
+            data = JSON.parse(event.data)
+        } catch (e) {}
+        data["cloudflare_proxy"] = true
+        server.send(JSON.stringify(data))
+    })
+})
 
 // Use Github to login
 import { githubAuth } from "@hono/oauth-providers/github"
