@@ -14,6 +14,7 @@ jobs:
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
+          wranglerVersion: "3.30.0"
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           secrets: |
             OAUTH_GITHUB_CLIENT_ID
