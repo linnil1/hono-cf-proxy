@@ -43,6 +43,9 @@ const target_sio_url = "https://socketio-chat-h9jt.herokuapp.com"
 // const target_grpc_url = "http://localhost:5001"  // not work
 // const target_grpc_url = "grpcbin.test.k6.io"
 
+// Proxy to backend defined in DNS
+app.all("/anything/*", async (c) => await fetch(c.req.raw))
+
 // Proxy to target
 // Most of HTTP request will work
 // e.g. curl {host}/basic/get
