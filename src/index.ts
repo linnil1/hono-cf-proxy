@@ -11,9 +11,9 @@ type Bindings = {
     QUOTA: DurableObjectNamespace
     DATA: KVNamespace
     DB: D1Database
-    github_client_id: string // set in .dev.vars
-    github_client_secret: string // set in .dev.vars
-    jwt_secret: string // set in .dev.vars
+    OAUTH_GITHUB_CLIENT_ID: string // set in .dev.vars
+    OAUTH_GITHUB_CLIENT_SECRET: string // set in .dev.vars
+    JWT_SECRET: string // set in .dev.vars
 }
 type Variables = {
     method: string
@@ -51,7 +51,6 @@ app.all("/basic/*", basicProxy(target_url))
 // Modify the response data(header, status code, data)
 app.use("/rewrite_res/*", async (c, next) => {
     await next()
-    console.log(c.res.status, Object.fromEntries(c.res.headers))
     // If await c.req.xx() is called or status_code is changed
     // A new response should overwrite the c.res object
     const data = JSON.parse(await c.res.text())
@@ -158,11 +157,11 @@ app.get("/auth_jwt/init", async (c) => {
         username: "linnil1",
         exp: Math.floor(Date.now() / 1000) + 60 * 5, // 5mins
     }
-    return c.json({ token: await sign(data, c.env.jwt_secret, "HS256") })
+    return c.json({ token: await sign(data, c.env.JWT_SECRET, "HS256") })
 })
 app.use(
     "/auth_jwt/*",
-    async (c, next) => await jwt({ secret: c.env.jwt_secret })(c, next),
+    async (c, next) => await jwt({ secret: c.env.JWT_SECRET })(c, next),
 )
 app.use("/auth_jwt/*", extractUserFromJWT())
 app.all("/auth_jwt/*", returnUserInfo())
@@ -245,8 +244,8 @@ app.use(
     "/auth_github",
     async (c, next) =>
         await githubAuth({
-            client_id: c.env.github_client_id,
-            client_secret: c.env.github_client_secret,
+            client_id: c.env.OAUTH_GITHUB_CLIENT_ID,
+            client_secret: c.env.OAUTH_GITHUB_CLIENT_SECRET,
         })(c, next),
 )
 app.get("/auth_github", async (c) => {

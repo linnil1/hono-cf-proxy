@@ -1,4 +1,5 @@
 .dev.vars
-node_modules
+node_modules/
 .*.swp
 .wrangler/
+__pycache__/

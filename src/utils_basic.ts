@@ -13,13 +13,12 @@ export function basicProxy(proxy_url: string = ""): Handler {
         // => suffix_path = /a/b
         // let path = new URL(c.req.raw.url).pathname
         let path = c.req.path
-        console.log(path)
         path = path.replace(
             new RegExp(`^${c.req.routePath.replace("*", "")}`),
             "/",
         )
-        console.log(c.req.routePath, path)
         let url = proxy_url ? proxy_url + path : c.req.url
+        console.log(url)
         // add params to URL
         if (c.req.query()) url = url + "?" + new URLSearchParams(c.req.query())
         // request

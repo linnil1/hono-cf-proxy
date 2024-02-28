@@ -43,7 +43,6 @@ export function setRateLimitByUser(
 ): MiddlewareHandler {
     return async (c, next) => {
         const new_id = id + "_user" + c.get("user").user_id
-        // console.log(new_id)
         return setRateLimit(new_id, options)(c, next)
     }
 }
@@ -80,7 +79,7 @@ export function setQuotaLimit(
                 String(value),
             ]),
         )
-        console.log(options_record)
+        // console.log(options_record)
         const rep = await obj.fetch(
             "http://localhost/query?" + new URLSearchParams(options_record),
         )

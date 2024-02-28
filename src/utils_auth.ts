@@ -65,7 +65,6 @@ export function validateTokenBySql(): MiddlewareHandler {
                 message: "Require 'Authorization: Bearer' in Header",
             })
         const token = headerToken.substring(7)
-        console.log(new Date().toISOString())
         const stat = c.env.DB.prepare(
             `
 SELECT *, GROUP_CONCAT(groups.groupname) AS groups
