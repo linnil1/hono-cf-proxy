@@ -45,8 +45,9 @@ async def echoReq(path_name: str, request: Request):
     except:
         pass
     return {
+        "method": request.method,
         "client": request.client,
-        "path": path_name,
+        "path": "/" + path_name,
         "headers": dict(request.headers),
         "query_params": dict(request.query_params),
         "body": await request.body(),

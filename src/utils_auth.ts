@@ -16,34 +16,6 @@ export async function generateTokenId(c: Context) {
 }
 
 /**
- * Get user object directly in KV with Token as key
- *
- * @returns {MiddlewareHandler} The Hono middleware.
- */
-export function validateTokenBySingleKey(): MiddlewareHandler {
-    return async (c, next) => {
-        const headerToken = c.req.header("Authorization")
-        if (!headerToken || !headerToken.startsWith("Bearer "))
-            throw new HTTPException(401, {
-                message: "Require 'Authorization: Bearer' in Header",
-            })
-        const token = headerToken.substring(7)
-        const token_obj = await c.env.DATA.get(`token-${token}`, {
-            type: "json",
-        })
-        if (!token_obj)
-            throw new HTTPException(401, {
-                message: "Invalid Token",
-            })
-        // const header = c.get("headers")
-        // delete header["Authorization"]
-        // c.set("headers", header)
-        c.set("user", token_obj)
-        await next()
-    }
-}
-
-/**
  * Validate the token is in the KV and get the user_id.
  * And get the user object directly in KV
  *
@@ -147,7 +119,7 @@ export function returnUserInfo(): Handler {
  * @param {string} group_name The group that allow to access
  * @returns {Handler} The Hono endpoint Handler.
  */
-export function group_permission(group_name: string): MiddlewareHandler {
+export function groupPermission(group_name: string): MiddlewareHandler {
     return async (c, next) => {
         const data = c.get("user")
         // not group_Name not in user's groups list

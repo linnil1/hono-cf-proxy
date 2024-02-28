@@ -19,9 +19,11 @@ type Variables = {
     method: string
     headers: Record<string, string>
     queries: Record<string, string>
+    path: string
     body?: string
-    resp_body?: string
     status?: number
+    resp_body?: string
+    resp_headers?: Record<string, string>
     ws_server?: WebSocket
     ws_client?: WebSocket
 }
@@ -31,23 +33,23 @@ const app = new Hono<{
     Variables: Variables
 }>()
 
-// for debug: run `python backend-api.py` as target
-const target_url = "https://websocketstest.com/service"
-// const target_url = "http://localhost:5000"
+// const target_url = "http://localhost:5000"  // debug
+const target_url = "https://httpbin.org"
+// const target_ws_url = target_url + "/websocket"   // debug
 const target_ws_url = "https://echo.websocket.org"
-// const target_ws_url = target_url + "/websocket"
+// The socketio server is from https://socket.io/demos/chat/
 const target_sio_url = "https://socketio-chat-h9jt.herokuapp.com"
-// const target_sio_url = target_url + "/socketio"
-// const target_grpc_url = "http://localhost:5001"
-// const target_url = "https://httpbin.org/anything"
-// const target_url = "https://httpbin.org"
+// const target_sio_url = target_url + "/socketio"  // debug
+// const target_grpc_url = "http://localhost:5001"  // not work
+// const target_grpc_url = "grpcbin.test.k6.io"
 
 // Proxy to target
-// also `curl localhost:8787/app1/image/png` can work, too.
-app.all("/app1/*", basicProxy(target_url))
+// Most of HTTP request will work
+// e.g. curl {host}/basic/get
+app.all("/basic/*", basicProxy(target_url))
 
 // Modify the response data(header, status code, data)
-app.use("/app2/*", async (c, next) => {
+app.use("/rewrite_res/*", async (c, next) => {
     await next()
     console.log(c.res.status, Object.fromEntries(c.res.headers))
     // If await c.req.xx() is called or status_code is changed
@@ -62,81 +64,94 @@ app.use("/app2/*", async (c, next) => {
     c.header("Server", "") // = delete it
     c.header("in_after_rep", "add_in_after_rep_value")
 })
-app.all("/app2/*", basicProxy(target_url))
+app.all("/rewrite_res/*", basicProxy(target_url))
 
-// Rewrite the request
-import { extractReqVar, proxyReqVar } from "./utils_basic"
-app.use("/app3/*", extractReqVar())
-app.use("/app3/*", async (c, next) => {
-    let querys = c.get("queries")
-    querys["query"] = "add_query_value"
-    let data = JSON.parse(c.get("body") || "{}")
-    data["body"] = "add_body_value"
-    c.set("body", JSON.stringify(data))
-    c.set("method", "POST")
-    c.req.path = "/post" // force replace /app3 prefix
+// Rewrite the request (header, method, query, data)
+app.use("/rewrite_req/*", async (c, next) => {
+    let url_obj = new URL(c.req.url)
+    let path = url_obj.pathname
+    path = "/post"
+    let queries = c.req.query()
+    queries["add_query"] = "add_query_value"
+    let headers = Object.fromEntries(c.req.raw.headers)
+    headers["add_header"] = "add_header_value"
+    // let data = JSON.parse(await c.req.text())
+    let data = { data: "data1" }
+
+    const req = new Request(
+        url_obj.origin + path + "?" + new URLSearchParams(queries),
+        {
+            // method: c.req.method,
+            method: "POST",
+            headers: headers,
+            body: JSON.stringify(data),
+        },
+    )
+    c.req.raw = req
+    c.req.path = path
     await next()
 })
-app.all("/app3/*", proxyReqVar(target_url))
+app.use("/rewrite_req/*", basicProxy(target_url))
 
 // Rewrite the request and response
 import { handleReqResVar, variableProxy } from "./utils_basic"
-app.use("/app3-1/*", handleReqResVar())
-app.use("/app3-1/*", async (c, next) => {
+app.use("/rewrite_req_res/*", handleReqResVar())
+app.use("/rewrite_req_res/*", async (c, next) => {
     let querys = c.get("queries")
     querys["query"] = "add_query_value"
     c.set("queries", querys)
-    c.req.path = c.req.path.replace("/app3-1", "")
+    c.set("path", c.get("path").replace("/rewrite_req_res", ""))
     await next()
-    // If you save resp_body in json
-    // It will be more eaiser
-    const data = await new Response(c.get("resp_body")).text()
-    let body = JSON.parse(data || "{}")
-    console.log(body)
+    const body = c.get("resp_body")
     body["add_resp"] = true
     c.set("status", 201)
-    c.set("resp_body", JSON.stringify(body, null, " "))
+    c.set("resp_body", body)
 })
-app.all("/app3-1/*", variableProxy(target_url))
+app.all("/rewrite_req_res/*", variableProxy(target_url))
+
+// Image: the same as '{host}/basic/image/png'
+app.use("/get_image/*", async (c, next) => {
+    c.req.path = "/image/png"
+    await next()
+})
+app.get("/get_image/*", basicProxy(target_url))
+
+// Fetch another website
+app.use("/fetch_another/*", handleReqResVar())
+app.use("/fetch_another/*", async (c, next) => {
+    c.set("path", c.get("path").replace("/fetch_another", ""))
+    await next()
+    const rep = await fetch(target_url + "/get?another_query=true")
+    const data = c.get("resp_body")
+    data["fetch_another"] = await rep.json()
+    c.set("resp_body", data)
+})
+app.all("/fetch_another/*", variableProxy(target_url))
 
 // Authorization with hard-coded token
 // https://github.com/honojs/hono/blob/main/src/middleware/bearer-auth/index.ts
 import { bearerAuth } from "hono/bearer-auth"
-app.get("/app4-0/init", async (c) => c.json({ token: "token1" }))
-app.use("/app4-0/*", bearerAuth({ token: "token1" }))
-app.all("/app4-0/*", basicProxy(target_url))
+app.get("/auth_original/init", async (c) => c.json({ token: "token1" }))
+app.use("/auth_original/*", bearerAuth({ token: "token1" }))
+app.all("/auth_original/*", basicProxy(target_url))
 
-// Authorization by Basic auth
+// Authorization by Basic auth (user/password)
 // https://github.com/honojs/hono/blob/main/src/middleware/basic-auth/index.ts
 import { basicAuth } from "hono/basic-auth"
-app.get("/app4-1/init", async (c) =>
+app.get("/auth_original_basic/init", async (c) =>
     c.json({ username: "linnil1", password: "linnil1" }),
 )
-app.use("/app4-1/*", basicAuth({ username: "linnil1", password: "linnil1" }))
-app.all("/app4-1/*", basicProxy(target_url))
-
-// Authroization by dynamic KV
-// * Init the KV
-// * Validate the token using KV,
-//   this is almost the same with the validate user/password
-import { validateTokenBySingleKey, returnUserInfo } from "./utils_auth"
-app.get("/app5/init", async (c) => {
-    const token = "token1"
-    const data = {
-        token_id: token,
-        username: "linnil1",
-        user_id: "linnil1",
-    }
-    await c.env.DATA.put(`token-${token}`, JSON.stringify(data))
-    return c.json({ token })
-})
-app.use("/app5/*", validateTokenBySingleKey())
-app.all("/app5/*", returnUserInfo())
+app.use(
+    "/auth_original_basic/*",
+    basicAuth({ username: "linnil1", password: "linnil1" }),
+)
+app.all("/auth_original_basic/*", basicProxy(target_url))
 
 // Authorization by JWT
+// https://github.com/honojs/hono/blob/main/src/middleware/jwt/index.ts
 import { jwt, sign } from "hono/jwt"
-import { extractUserFromJWT } from "./utils_auth"
-app.get("/app6/init", async (c) => {
+import { extractUserFromJWT, returnUserInfo } from "./utils_auth"
+app.get("/auth_jwt/init", async (c) => {
     // you can retrieve from KV
     const data = {
         user_id: "linnil1",
@@ -146,59 +161,60 @@ app.get("/app6/init", async (c) => {
     return c.json({ token: await sign(data, c.env.jwt_secret, "HS256") })
 })
 app.use(
-    "/app6/*",
+    "/auth_jwt/*",
     async (c, next) => await jwt({ secret: c.env.jwt_secret })(c, next),
 )
-app.use("/app6/*", extractUserFromJWT())
-app.all("/app6/*", returnUserInfo())
+app.use("/auth_jwt/*", extractUserFromJWT())
+app.all("/auth_jwt/*", returnUserInfo())
 
-// Authroization by dynamic KV with separated user and token
-// This implementation allow multiple token for user
+// Authorization by dynamic KV with separated user and token
+// This implementation allows multiple tokens for a user
 import { validateTokenByKv, generateTokenId } from "./utils_auth"
-app.get("/app7/init", async (c) => {
-    const data_user = {
-        username: "linnil1",
-        user_id: "linnil1",
-        // for app8
-        groups:
-            c.req.query("group") == "group1"
-                ? ["group1", "group2"]
-                : ["group2"],
+app.get("/auth_kv/init", async (c) => {
+    const group = c.req.query("group")
+    if (!group) {
+        throw new HTTPException(400, {
+            message: "?group=group1 or ?group=group2 is required",
+        })
     }
-    const data_token = {
+    // Create user object and saved in KV
+    const user_obj = {
+        username: `linnil1-${group}`,
+        user_id: `linnil1-${group}`,
+        groups: group == "group1" ? ["group1", "group2"] : ["group2"],
+    }
+    await c.env.DATA.put(`user-${user_obj.user_id}`, JSON.stringify(user_obj))
+    // Create token object and saved in KV
+    const token_obj = {
         token_id: await generateTokenId(c),
-        user_id: data_user.user_id,
+        user_id: user_obj.user_id,
     }
-    await c.env.DATA.put(`user-${data_user.user_id}`, JSON.stringify(data_user))
     await c.env.DATA.put(
-        `token-${data_token.token_id}`,
-        JSON.stringify(data_token),
+        `token-${token_obj.token_id}`,
+        JSON.stringify(token_obj),
         { expirationTtl: 3600 },
     )
-    return c.json({ token: data_token.token_id })
+    return c.json({ token: token_obj.token_id })
 })
-app.use("/app7/*", validateTokenByKv())
-app.all("/app7/*", returnUserInfo())
+app.use("/auth_kv/*", validateTokenByKv())
+app.all("/auth_kv/*", returnUserInfo())
 
 // Group permission
 // And allow group1 to access, i.e. linnil1 can access but linnil2 cannot
-app.get("/app8/init", async (c) => {
-    const name = c.req.query("name")
-    if (!name)
-        throw new HTTPException(400, { message: "?name=linnil1 is required" })
-    return c.redirect(`/app7/init?group=${name}`)
+app.get("/auth_group_kv/init", async (c) => {
+    return c.redirect(`/auth_kv/init?group=${c.req.query("group") || ""}`)
 })
-import { group_permission } from "./utils_auth"
-app.use("/app8/*", validateTokenByKv())
-app.use("/app8/*", group_permission("group1"))
-app.all("/app8/*", returnUserInfo())
+import { groupPermission } from "./utils_auth"
+app.use("/auth_group_kv/*", validateTokenByKv())
+app.use("/auth_group_kv/*", groupPermission("group1"))
+app.all("/auth_group_kv/*", returnUserInfo())
 
 // All table are save in D1(SQL)
 import { validateTokenBySql } from "./utils_auth"
-app.get("/app9/init", async (c) => {
+app.get("/auth_group_sql/init", async (c) => {
     const group_name = c.req.query("group")
     if (!group_name)
-        throw new HTTPException(400, { message: "?group=linnil1 is required" })
+        throw new HTTPException(400, { message: "?group=group1 is required" })
     while (true) {
         const token = crypto.randomUUID()
         try {
@@ -208,7 +224,7 @@ app.get("/app9/init", async (c) => {
                 // expire at 60 mins
                 .bind(
                     token,
-                    group_name == "linnil1" ? 1 : 2,
+                    group_name == "group1" ? 1 : 2,
                     new Date(Date.now() + 60 * 60 * 1000).toISOString(),
                 )
                 .run()
@@ -218,88 +234,111 @@ app.get("/app9/init", async (c) => {
         }
     }
 })
-app.use("/app9/*", validateTokenBySql())
-app.use("/app9/*", group_permission("group1"))
-app.all("/app9/*", returnUserInfo())
+app.use("/auth_group_sql/*", validateTokenBySql())
+app.use("/auth_group_sql/*", groupPermission("group1"))
+app.all("/auth_group_sql/*", returnUserInfo())
 
-// Add rate limit
+// Use Github to login
+// https://github.com/honojs/middleware/tree/main/packages/oauth-providers
+import { githubAuth } from "@hono/oauth-providers/github"
+app.use(
+    "/auth_github",
+    async (c, next) =>
+        await githubAuth({
+            client_id: c.env.github_client_id,
+            client_secret: c.env.github_client_secret,
+        })(c, next),
+)
+app.get("/auth_github", async (c) => {
+    // Retrieve github user info
+    const github_user = c.get("user-github")
+    if (!github_user) throw new HTTPException(401, { message: "Unauthorized" })
+    console.log(github_user)
+    // Save GitHub user information into KV
+    // Use GitHub ID as user ID
+    await c.env.DATA.put(
+        "user-github-" + github_user.id,
+        JSON.stringify(github_user),
+    )
+
+    // Issue token
+    const token_obj = {
+        token_id: await generateTokenId(c),
+        user_id: "github-" + github_user.id,
+        create_at: new Date().toISOString(),
+    }
+    await c.env.DATA.put(
+        "token-" + token_obj.token_id,
+        JSON.stringify(token_obj),
+        {
+            expirationTtl: 3600,
+        },
+    )
+    return c.json({
+        message: "go to /auth_kv to try this token",
+        token: token_obj.token_id,
+    })
+})
+
+// Rate limit
 import { setRateLimit, setRateLimitByUser } from "./utils_limiter"
-app.use("/app10/*", setRateLimit("app10_15s_setRateLimit", { rate: 15000 }))
-app.all("/app10/*", basicProxy(target_url))
+app.use("/rate_limit/*", setRateLimit("id_of_15s_rate_limit", { rate: 15000 }))
+app.all("/rate_limit/*", basicProxy(target_url))
 
 // Rate limit per user
-app.get("/app10-1/init", async (c) => {
-    c.redirect("/app7/init?group=linnil1")
+app.get("/rate_limit_user/init", async (c) => {
+    return c.redirect(`/auth_kv/init?group=${c.req.query("group") || ""}`)
 })
-app.use("/app10-1/*", validateTokenByKv())
+app.use("/rate_limit_user/*", validateTokenByKv())
 app.use(
-    "/app10-1/*",
-    setRateLimitByUser("app10_1_rate_15s_peruser", { rate: 15000 }),
+    "/rate_limit_user/*",
+    setRateLimitByUser("id_of_15s_rate_limit_prefix", { rate: 15000 }),
 )
-app.all("/app10-1/*", basicProxy(target_url))
+app.all("/rate_limit_user/*", basicProxy(target_url))
 
-// Add Quota limit
-// Quota limit per user is the same as rate limiter
-// Quota limit by ip can also be implement for rate limiter
+// Quota limit
 import { setQuotaLimit, setQuotaLimitByIp } from "./utils_limiter"
 app.use(
-    "/app11/*",
-    setQuotaLimit("app11_quota", {
+    "/quota_limit/*",
+    setQuotaLimit("id_quota_limit_1_req_per_2_minute", {
         limit: 1,
         interval: 2,
         interval_unit: "minute",
     }),
 ) // 1 requests per 2 minutes
-app.all("/app11/*", basicProxy(target_url))
+app.all("/quota_limit/*", basicProxy(target_url))
+
+// Quota limit per IP
 app.use(
-    "/app11-1/*",
-    setQuotaLimitByIp("app11_quota", {
+    "/quota_limit_ip/*",
+    setQuotaLimitByIp("id_quota_limit_prefix", {
         limit: 2,
         interval: 1,
         interval_unit: "minute",
     }),
 ) // 2 requests per minute
-app.all("/app11-1/*", basicProxy(target_url))
+app.all("/quota_limit_ip/*", basicProxy(target_url))
 
 // Cache
 import { cache } from "hono/cache"
 app.use(
-    "/app12/*",
+    "/cache/*",
     cache({
-        cacheName: "app12",
+        cacheName: "cache",
         cacheControl: "max-age=10",
     }),
 )
-app.all("/app12/*", basicProxy(target_url))
+app.all("/cache/*", basicProxy(target_url))
 
-// image: the same
-app.use("/app13/*", async (c, next) => {
-    c.req.path = "/image/png"
-    await next()
-})
-app.get("/app13/*", basicProxy(target_url))
-
-// fetch another website
-app.use("/app14/*", handleReqResVar())
-app.use("/app14/*", async (c, next) => {
-    await next()
-    const rep = await fetch(target_url + "/get?another_query=true")
-    const data: Record<string, any> = await new Response(
-        c.get("resp_body"),
-    ).json()
-    data["another_fetch"] = await rep.json()
-    c.set("resp_body", JSON.stringify(data))
-})
-app.all("/app14/*", variableProxy(target_url))
-
+// Forward other protocal to target
 import { useWebsocket, getWebsocketTarget } from "./utils_basic"
-// Proxy by fetch
-app.all("/app15-0/*", basicProxy(target_ws_url))
-app.all("/app15-1/*", basicProxy(target_sio_url))
+app.all("/websocket/*", basicProxy(target_ws_url))
+app.all("/socketio/*", basicProxy(target_sio_url))
+// app.all("/grpc/*", basicProxy(target_grpc_url))  // not work
 
 // Handle websocket in Cloudflare worker
-app.use("/app16/*", useWebsocket())
-app.all("/app16/*", async (c) => {
+app.use("/websocket_server/*", useWebsocket())
+app.all("/websocket_server/*", async (c) => {
     const server = c.get("ws_server")
     if (server == undefined) {
         throw new Error("websocket is undefined")
@@ -307,15 +346,15 @@ app.all("/app16/*", async (c) => {
     server.addEventListener("message", (event) => {
         const data = {
             ...JSON.parse(event.data),
-            server: "proxy-server",
+            server: "cf-worker-server",
         }
         server.send(JSON.stringify(data))
     })
 })
 
-// Cloudflare worker as proxy websocket
-app.use("/app17/*", useWebsocket())
-app.all("/app17/*", async (c) => {
+// Cloudflare worker as websocket proxy
+app.use("/websocket_proxy/*", useWebsocket())
+app.all("/websocket_proxy/*", async (c) => {
     const target = await getWebsocketTarget(target_ws_url)
     const server = c.get("ws_server")
     if (server == undefined) {
@@ -332,45 +371,17 @@ app.all("/app17/*", async (c) => {
         try {
             data = JSON.parse(event.data)
         } catch (e) {}
-        data["cloudflare_proxy"] = true
+        data["server"] = "cf-worker-proxy"
         server.send(JSON.stringify(data))
     })
 })
 
-// Use Github to login
-import { githubAuth } from "@hono/oauth-providers/github"
-app.use(
-    "/user/auth/github",
-    async (c, next) =>
-        await githubAuth({
-            client_id: c.env.github_client_id,
-            client_secret: c.env.github_client_secret,
-        })(c, next),
+// Redirect To README
+app.all("/", async (c) =>
+    c.redirect("https://github.com/linnil1/hono-cf-proxy"),
 )
 
-app.get("/user/auth/github", async (c) => {
-    // save github user into KV
-    // use github id as user-id
-    const github_user = c.get("user-github")
-    if (!github_user) throw new HTTPException(401, { message: "Unauthorized" })
-    console.log(github_user)
-    // github_user["kv_create_at"] = new Date().toISOString()
-    await c.env.DATA.put("user-" + github_user.id, JSON.stringify(github_user))
-    const token_id = await generateTokenId(c)
-    const token_obj = {
-        token_id: token_id,
-        user_id: github_user.id,
-        create_at: new Date().toISOString(),
-    }
-    await c.env.DATA.put("token-" + token_id, JSON.stringify(token_obj), {
-        expirationTtl: 3600,
-    })
-    return c.json({
-        token: token_id,
-    })
-})
-
-// error handling
+// Error handling
 app.onError((err, c) => {
     if (err instanceof HTTPException) {
         c.status(err.status)
@@ -389,5 +400,4 @@ app.notFound((c) => {
     return c.json({ error: "Not Found" }, 404)
 })
 
-// export
 export default app

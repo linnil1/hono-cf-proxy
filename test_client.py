@@ -7,25 +7,33 @@ import asyncio
 
 
 def testRest():
-    host = "http://localhost:8787/app6"
-    rep = requests.get(host + "/init")
-    token = rep.json()["token"]
-    print(token)
-    rep = requests.get(host, headers={"Authorization": f"Bearer {token}"})
+    host = "https://hono-cf-proxy.linnil1.me"
+    host = "http://localhost:8787"
+
+    # basic proxy
+    rep = requests.get(host + "/basic/get")
     print(rep.json())
 
-    rep = requests.get("http://localhost:8787/app1")
+    # auth proxy
+    url = host + "/auth_kv"
+    rep = requests.get(url + "/init?group=group1")
+    token = rep.json()["token"]
+    print(token)
+    rep = requests.get(url, headers={"Authorization": f"Bearer {token}"})
     print(rep.json())
 
 
 def testWebsocket():
     url = "ws://localhost:5000/websocket"  # target
     url = "wss://echo.websocket.org"  # other-hosted target
-    url = "ws://localhost:8787/app16"  # websocket on worker
-    url = "ws://localhost:8787/app17"  # websocket on worker and proxy to target
-    url = "ws://localhost:8787/app1/websocket"  # proxy by fetch
+    host = "wss://hono-cf-proxy.linnil1.me"
+    host = "ws://localhost:8787"
+    url = host + "/websocket"  # proxy by fetch
+    url = host + "/websocket_server"  # websocket on worker
+    url = host + "/websocket_proxy"  # websocket on worker and proxy to target
     with connect(url) as websocket:
         for i in range(5):
+            print("Client Send", {"send": i})
             websocket.send(json.dumps({"send": i}))
             data = websocket.recv()
             print(f"Client Received: {data}")
@@ -35,8 +43,7 @@ def testSocketIO():
     # sio = socketio.Client(logger=True, engineio_logger=True)
     sio = socketio.Client()
     url, path = "http://localhost:5000", "/socketio"  # target
-    url, path = "http://localhost:8787", "/app1/socketio"  # proxy by fetch
-    url, path = "http://localhost:8787", "/app18"  # not work
+    url, path = "http://localhost:8787", "/socketio"  # proxy by fetch
     sio.connect(url, socketio_path=path, transports="websocket")
     for i in range(5):
         sio.emit("req", {"send": i})
@@ -55,20 +62,24 @@ def testSocketIO():
 
 
 async def testChatRoom():
+    print("GO TO https://socketio-chat-h9jt.herokuapp.com to test some message")
     # sio = socketio.Client(logger=True, engineio_logger=True)
     sio = socketio.AsyncClient()
     url, path = "https://socketio-chat-h9jt.herokuapp.com", "socket.io"
-    url, path = "http://localhost:8787", "/app15-1/socket.io"
+    url, path = "https://hono-cf-proxy.linnil1.me", "/socketio/socket.io"
+    url, path = "http://localhost:8787", "/socketio/socket.io"
     await sio.connect(url, socketio_path=path, transports="websocket")
+    print("Send:", "Add WebsocketTester")
     await sio.emit("add user", "WebsocketTester")
+    print("Send:", "OK")
     await sio.emit("new message", "OK")
-    print("GO TO https://socketio-chat-h9jt.herokuapp.com to test some message")
 
     @sio.on("*")
     async def handle_event(event, *args):
         data = args[0]
-        print(event, args)
+        print("Receive:", event, args)
         if "username" in data and event == "new message":
+            print("Send:", f"Hello {data['username']}!")
             await sio.emit("new message", f"Hello {data['username']}!")
 
     while True:
@@ -78,7 +89,8 @@ async def testChatRoom():
         await sio.emit("stop typing", "")
 
 
-# testRest()
-# testWebsocket()
-# testSocketIO()
-asyncio.run(testChatRoom())
+if __name__ == "__main__":
+    # testRest()
+    # testWebsocket()
+    # testSocketIO()
+    asyncio.run(testChatRoom())
