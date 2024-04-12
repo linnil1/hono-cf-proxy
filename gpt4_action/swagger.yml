@@ -1,0 +1,57 @@
+openapi: 3.0.2
+info:
+  title: Document Retrieval API
+  description: API for retrieving related documents based on a query
+  version: '1.0'
+
+servers:
+  - url: https://hono-cf-proxy-qa.linnil1.me
+
+paths:
+  /query/:
+    post:
+      operationId: "Query"
+      summary: Retrieve Related Documents
+      description: Retrieves documents related to a given query.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: Query string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DocumentChunk'
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+
+components:
+  schemas:
+    DocumentChunk:
+      type: object
+      properties:
+        text:
+          type: string
+          description: Document text
+        title:
+          type: string
+          description: Document Name/Path
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+security:
+  - bearerAuth: []
