@@ -1,0 +1,7 @@
+fastapi
+pydantic
+uvicorn
+langchain
+langchain-openai
+faiss-cpu
+langchain_text_splitters
